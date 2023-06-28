@@ -7,9 +7,9 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 @Entity
-@Getter
 @Setter
-@Table(name = "board",uniqueConstraints = @UniqueConstraint(name = "password-uk", columnNames = {"password"}))
+@Getter
+@Table(name = "board")
 @NoArgsConstructor // setter로 하는 상황이 생길 가능성? 때문일까?
 public class Board extends Timestamped{
     @Id
@@ -18,10 +18,7 @@ public class Board extends Timestamped{
     private Long id;
 
     @Column(length = 20)
-    private String name;
-
-    @Column(length = 20)
-    private String password;
+    private String username;
 
     @Column(name = "b_title", length = 100, nullable = false)
     private String title;
@@ -31,9 +28,14 @@ public class Board extends Timestamped{
     @Column(name="b_contents")
     private String contents;
 
-    public Board(BoardRequestDto requestDto) {
-        this.name = requestDto.getName();
-        this.password = requestDto.getPassword();
+
+    public Board(BoardRequestDto requestDto, String username) {
+        this.title = requestDto.getTitle();
+        this.contents = requestDto.getContents();
+        this.username = username;
+    }
+
+    public void update(BoardRequestDto requestDto) {
         this.title = requestDto.getTitle();
         this.contents = requestDto.getContents();
     }

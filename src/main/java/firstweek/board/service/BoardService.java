@@ -2,30 +2,45 @@ package firstweek.board.service;
 
 import firstweek.board.dto.BoardRequestDto;
 import firstweek.board.dto.BoardResponseDto;
-import firstweek.board.dto.BoardSearch;
 import firstweek.board.entity.Board;
+import firstweek.board.jwt.JwtUtil;
 import firstweek.board.repository.BoardRepository;
+import io.jsonwebtoken.Claims;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
 public class BoardService {
 
     private final BoardRepository boardRepository;
+    private final HttpServletRequest request;
+    private final JwtUtil jwtUtil;
+
 
     public BoardResponseDto createBoard(BoardRequestDto requestDto) {
 
-        Board board = new Board(requestDto);
+        String tokenFromHeader = jwtUtil.getTokenFromHeader(request);
+        if (tokenFromHeader != null) {
 
-        Board savedBoard = boardRepository.save(board);
+            Claims info = jwtUtil.getUserInfoFromToken(tokenFromHeader);
+            String username = info.getSubject();
 
-        BoardResponseDto boardResponseDto = new BoardResponseDto(savedBoard);
+            Board board = new Board(requestDto, username);
 
-        return boardResponseDto;
+            Board savedBoard = boardRepository.save(board);
+            BoardResponseDto boardResponseDto = new BoardResponseDto(savedBoard);
+            return boardResponseDto;
+        } else {
+            throw new IllegalArgumentException("유효한 토큰이 아닙니다");
+        }
     }
 
     public List<BoardResponseDto> getBoards() {
@@ -34,34 +49,63 @@ public class BoardService {
         return BoardList.stream().map(BoardResponseDto::new).toList();
     }
 
-    public BoardSearch findBoardById(Long id) {
+    public BoardResponseDto findBoardById(Long id) {
         Board board = boardRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 게시글입니다."));
-        BoardSearch boardSearch = new BoardSearch(board);
-        return boardSearch;
+        BoardResponseDto boardResponseDto = new BoardResponseDto(board);
+        return boardResponseDto;
     }
 
     @Transactional
     public BoardResponseDto editBoard(Long id, BoardRequestDto requestDto) {
-        Board findBoard = boardRepository.findById(id).get();
-        if (requestDto.getPassword().equals(findBoard.getPassword())) {
+        String tokenFromHeader = jwtUtil.getTokenFromHeader(request);
+        if (tokenFromHeader != null) {
 
-            findBoard.setContents(requestDto.getContents());
-            findBoard.setName(requestDto.getName());
-            findBoard.setTitle(requestDto.getTitle());
-            return new BoardResponseDto(findBoard);
-        } else throw new IllegalArgumentException("비밀번호가 다릅니다");
+            Claims info = jwtUtil.getUserInfoFromToken(tokenFromHeader);
+            String username = info.getSubject();
+            // 유효한 토큰이면서 해당 사용자가 작성한 게시글만 수정 가능
+            Board findBoard = boardRepository.findById(id)
+                    .orElseThrow(() -> new IllegalArgumentException("해당 글이 없습니다"));
 
+            // 사용자 이름 일치 여부
+            if (findBoard.getUsername().equals(username)) {
+
+                // 변경감지
+                findBoard.update(requestDto);
+                Board board = boardRepository.findById(id).get();
+                return new BoardResponseDto(board);
+            } else {
+                throw new IllegalArgumentException("해당 사용자가 작성한 글이 아닙니다.");
+            }
+
+        } else {
+            throw new IllegalArgumentException("유효한 토큰이 아닙니다");
+        }
     }
 
     @Transactional
-    public String deleteBoard(Long id, Object password) {
-        Board findBoard = boardRepository.findById(id)
-                .orElseThrow(()-> new IllegalArgumentException("조회된 게시글이 없스빈다"));
-        if(findBoard.getPassword().equals(password.toString())){
-            boardRepository.delete(findBoard);
-            return "ok";
+    public Map<String, Object> deleteBoard(Long id) {
+        Map<String, Object> map = new HashMap<>();
+        String msg;
+        int status;
+        String tokenFromHeader = jwtUtil.getTokenFromHeader(request);
+        if (tokenFromHeader != null) {
+            Claims info = jwtUtil.getUserInfoFromToken(tokenFromHeader);
+            String username = info.getSubject();
+            Board findBoard = boardRepository.findById(id)
+                    .orElseThrow(() -> new IllegalArgumentException("조회된 게시글이 없습니다"));
+
+            if (findBoard.getUsername().equals(username)) {
+                boardRepository.delete(findBoard);
+                msg = "삭제 성공";
+                status = HttpServletResponse.SC_OK;
+                map.put("msg", msg);
+                map.put("status", status);
+                return map;
+            }
+            throw new IllegalArgumentException("해당 게시글은 사용자가 작성한 글이 아닙니다");
+        } else {
+            throw new IllegalArgumentException("유효한 토큰이 아닙니다");
         }
-        return "failure";
     }
 }
